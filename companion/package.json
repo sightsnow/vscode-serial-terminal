@@ -12,6 +12,6 @@
   "main": "./extension.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/littrick/vscode-serial-terminal.git"
+    "url": "https://github.com/sightsnow/vscode-serial-terminal.git"
   }
 }
