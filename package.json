@@ -1,8 +1,8 @@
 {
-  "name": "serialterminal",
-  "displayName": "serial terminal",
-  "publisher": "awsxxf",
-  "version": "0.1.9",
+  "name": "serialterminal-share",
+  "displayName": "Serial Terminal Share",
+  "publisher": "sightsnow",
+  "version": "0.2.0",
   "description": "An interactive serial terminal tool",
   "extensionKind": [
     "ui"
@@ -46,27 +46,27 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "entryView",
+          "id": "serial-terminal-share-sidebar",
           "title": "%entryView.title%",
           "icon": "$(debug-disconnect)"
         }
       ]
     },
     "views": {
-      "entryView": [
+      "serial-terminal-share-sidebar": [
         {
           "name": "%TreeView.serialPorts%",
-          "id": "serialport.serialportView",
+          "id": "serialTerminalShare.availablePorts",
           "initialSize": 20
         },
         {
           "name": "%TreeView.logs%",
-          "id": "serialport.logs",
+          "id": "serialTerminalShare.logs",
           "initialSize": 50
         },
         {
           "name": "%TreeView.scriptsNotebooks%",
-          "id": "serialport.scriptsNotebooks",
+          "id": "serialTerminalShare.scriptsNotebooks",
           "initialSize": 20
         }
       ]
@@ -82,146 +82,152 @@
     "menus": {
       "view/title": [
         {
-          "command": "serialTerminal.serialView.refresh",
-          "when": "view == serialport.serialportView",
+          "command": "serialTerminalShare.serialView.refresh",
+          "when": "view == serialTerminalShare.availablePorts",
           "group": "navigation@2"
         },
         {
-          "command": "serialTerminal.setting.SerialPort",
-          "when": "view == serialport.serialportView",
+          "command": "serialTerminalShare.setting.SerialPort",
+          "when": "view == serialTerminalShare.availablePorts",
           "group": "navigation@1"
         },
         {
-          "command": "serialTerminal.setting.Log",
-          "when": "view == serialport.logs",
+          "command": "serialTerminalShare.setting.Log",
+          "when": "view == serialTerminalShare.logs",
           "group": "navigation@1"
         },
         {
-          "command": "serialTerminal.logView.revealLogs",
-          "when": "view == serialport.logs",
+          "command": "serialTerminalShare.logView.revealLogs",
+          "when": "view == serialTerminalShare.logs",
           "group": "navigation@2"
         },
         {
-          "command": "serialTerminal.scriptView.newNotebook",
-          "when": "view == serialport.scriptsNotebooks",
+          "command": "serialTerminalShare.scriptView.newNotebook",
+          "when": "view == serialTerminalShare.scriptsNotebooks",
           "group": "navigation@1"
         },
         {
-          "command": "serialTerminal.setting.Notebook",
-          "when": "view == serialport.scriptsNotebooks",
+          "command": "serialTerminalShare.setting.Notebook",
+          "when": "view == serialTerminalShare.scriptsNotebooks",
           "group": "navigation@2"
         },
         {
-          "command": "serialTerminal.scriptView.revealNotebooks",
-          "when": "view == serialport.scriptsNotebooks",
+          "command": "serialTerminalShare.scriptView.revealNotebooks",
+          "when": "view == serialTerminalShare.scriptsNotebooks",
           "group": "navigation@4"
         },
         {
-          "command": "serialTerminal.terminal.startSaveLog",
-          "when": "view == terminal && serialTerminal.terminal.focus && !serialTerminal.terminal.recordingLog",
+          "command": "serialTerminalShare.terminal.startSaveLog",
+          "when": "view == terminal && serialTerminalShare.terminal.focus && !serialTerminalShare.terminal.recordingLog",
           "group": "navigation"
         },
         {
-          "command": "serialTerminal.terminal.stopSaveLog",
-          "when": "view == terminal && serialTerminal.terminal.focus && serialTerminal.terminal.recordingLog",
+          "command": "serialTerminalShare.terminal.stopSaveLog",
+          "when": "view == terminal && serialTerminalShare.terminal.focus && serialTerminalShare.terminal.recordingLog",
           "group": "navigation"
         },
         {
-          "command": "serialTerminal.terminal.clear",
-          "when": "view == terminal",
+          "command": "serialTerminalShare.terminal.clear",
+          "when": "view == terminal && serialTerminalShare.terminal.focus",
           "group": "navigation"
         }
       ],
       "view/item/context": [
         {
-          "command": "serialTerminal.serialView.open",
-          "when": "view == serialport.serialportView",
+          "command": "serialTerminalShare.serialView.open",
+          "when": "view == serialTerminalShare.availablePorts",
           "group": "inline"
         },
         {
-          "command": "serialTerminal.treeItem.revealInExplorer",
-          "when": "view == serialport.logs || view == serialport.scriptsNotebooks",
+          "command": "serialTerminalShare.treeItem.revealInExplorer",
+          "when": "view == serialTerminalShare.logs || view == serialTerminalShare.scriptsNotebooks",
           "group": "navigation@1"
         },
         {
-          "command": "serialTerminal.treeItem.deleteResource",
-          "when": "view == serialport.logs || view == serialport.scriptsNotebooks",
+          "command": "serialTerminalShare.treeItem.deleteResource",
+          "when": "view == serialTerminalShare.logs || view == serialTerminalShare.scriptsNotebooks",
           "group": "navigation@2"
         }
       ]
     },
     "commands": [
       {
-        "command": "serialTerminal.terminal.startSaveLog",
+        "command": "serialTerminalShare.agentPrompt",
+        "title": "AI Usage Prompt",
+        "category": "Serial Terminal Share"
+      },
+      {
+        "command": "serialTerminalShare.terminal.startSaveLog",
         "icon": "$(save-as)",
         "title": "%commands.terminal.startSaveLog%"
       },
       {
-        "command": "serialTerminal.terminal.stopSaveLog",
+        "command": "serialTerminalShare.terminal.stopSaveLog",
         "icon": "$(stop-circle)",
         "title": "%commands.terminal.stopSaveLog%"
       },
       {
-        "command": "serialTerminal.terminal.clear",
+        "command": "serialTerminalShare.terminal.clear",
         "icon": "$(clear-all)",
+        "enablement": "serialTerminalShare.terminal.focus",
         "title": "%commands.terminal.clear%"
       },
       {
-        "command": "serialTerminal.setting.SerialPort",
+        "command": "serialTerminalShare.setting.SerialPort",
         "icon": "$(gear)",
         "title": "%commands.setting.SerialPort%"
       },
       {
-        "command": "serialTerminal.setting.Log",
+        "command": "serialTerminalShare.setting.Log",
         "icon": "$(gear)",
         "title": "%commands.setting.Log%"
       },
       {
-        "command": "serialTerminal.setting.Notebook",
+        "command": "serialTerminalShare.setting.Notebook",
         "icon": "$(gear)",
         "title": "%commands.setting.Notebook%"
       },
       {
         "icon": "$(arrow-right)",
-        "command": "serialTerminal.treeItem.openOnEditor",
+        "command": "serialTerminalShare.treeItem.openOnEditor",
         "title": "%commands.treeItem.openOnEditor%"
       },
       {
-        "command": "serialTerminal.treeItem.revealInExplorer",
+        "command": "serialTerminalShare.treeItem.revealInExplorer",
         "icon": "$(file-directory)",
         "title": "%commands.treeItem.revealInExplorer%"
       },
       {
-        "command": "serialTerminal.treeItem.deleteResource",
+        "command": "serialTerminalShare.treeItem.deleteResource",
         "icon": "$(trash)",
         "title": "%commands.treeItem.deleteResource%"
       },
       {
-        "command": "serialTerminal.serialView.open",
+        "command": "serialTerminalShare.serialView.open",
         "icon": "$(arrow-right)",
         "title": "%commands.serialView.open%"
       },
       {
-        "command": "serialTerminal.serialView.refresh",
+        "command": "serialTerminalShare.serialView.refresh",
         "icon": "$(sync)",
         "title": "%commands.serialView.refresh%"
       },
       {
-        "command": "serialTerminal.logView.openOnEditor",
+        "command": "serialTerminalShare.logView.openOnEditor",
         "title": "%commands.logView.openOnEditor%"
       },
       {
-        "command": "serialTerminal.logView.revealLogs",
+        "command": "serialTerminalShare.logView.revealLogs",
         "icon": "$(file-directory)",
         "title": "%commands.logView.revealLogs%"
       },
       {
-        "command": "serialTerminal.scriptView.newNotebook",
+        "command": "serialTerminalShare.scriptView.newNotebook",
         "icon": "$(new-file)",
         "title": "%commands.scriptView.newNotebook%"
       },
       {
-        "command": "serialTerminal.scriptView.revealNotebooks",
+        "command": "serialTerminalShare.scriptView.revealNotebooks",
         "icon": "$(file-directory)",
         "title": "%commands.scriptView.revealNotebooks%"
       }
@@ -229,7 +235,7 @@
     "configuration": {
       "title": "%setting.title%",
       "properties": {
-        "SerialTerminal.serialPort.configurations": {
+        "SerialTerminalShare.serialPort.configurations": {
           "title": "%setting.serialPort.configurations.title%",
           "type": "array",
           "default": [
@@ -249,30 +255,30 @@
           },
           "markdownDescription": "%setting.serialPort.configurations.description%"
         },
-        "SerialTerminal.log.savePath": {
+        "SerialTerminalShare.log.savePath": {
           "title": "%setting.log.savePath.title%",
           "type": "string",
           "markdownDescription": "%setting.log.savePath.description%"
         },
-        "SerialTerminal.log.autoSave": {
+        "SerialTerminalShare.log.autoSave": {
           "title": "%setting.log.autoSave.title%",
           "type": "boolean",
           "default": false,
           "markdownDescription": "%setting.log.autoSave.description%"
         },
-        "SerialTerminal.log.timestamp.enable": {
+        "SerialTerminalShare.log.timestamp.enable": {
           "title": "%setting.log.timestamp.enable.title%",
           "type": "boolean",
           "default": false,
           "markdownDescription": "%setting.log.timestamp.enable.description%"
         },
-        "SerialTerminal.log.timestamp.duration": {
+        "SerialTerminalShare.log.timestamp.duration": {
           "title": "%setting.log.timestamp.duration.title%",
           "type": "number",
           "default": 20000000,
           "markdownDescription": "%setting.log.timestamp.duration.description%"
         },
-        "SerialTerminal.notebook.savePath": {
+        "SerialTerminalShare.notebook.savePath": {
           "title": "%setting.notebook.savePath.title%",
           "type": "string",
           "markdownDescription": "%setting.notebook.savePath.description%"
@@ -281,7 +287,8 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && npm run package:companion",
+    "package:companion": "cd companion && vsce package --out ../bundled-companion.vsix",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",

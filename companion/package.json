@@ -1,0 +1,17 @@
+{
+  "name": "serialterminal-share-remote",
+  "displayName": "Serial Terminal Share Remote",
+  "publisher": "sightsnow",
+  "version": "0.2.0",
+  "description": "Access Windows serial terminals from a Remote SSH development host.",
+  "engines": {
+    "vscode": "^1.76.0"
+  },
+  "extensionKind": ["workspace"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/littrick/vscode-serial-terminal.git"
+  }
+}

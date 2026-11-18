@@ -1,7 +1,5 @@
-import { EventEmitter } from "vscode";
 import { log } from "../logger";
 import { SerialPort as NativeSerialPort } from "serialport";
-import { resolve } from "path";
 
 interface Configuration {
     baudrate: number,
@@ -17,15 +15,17 @@ class SerialPort {
     private serialPortInstance: NativeSerialPort;
     private portPath: string;
     private cfg: Configuration;
+    private openResult: Promise<Error | null>;
 
     private onOpen: Set<() => void> = new Set;
     private onData: Set<(data: Buffer) => void> = new Set;
     private onClose: Set<() => void> = new Set;
 
-    private constructor(serial: NativeSerialPort, portPah: string, cfg: Configuration) {
+    private constructor(serial: NativeSerialPort, portPah: string, cfg: Configuration, opened: Promise<Error | null>) {
         this.serialPortInstance = serial;
         this.portPath = portPah;
         this.cfg = cfg;
+        this.openResult = opened;
         this.init();
     }
 
@@ -47,22 +47,27 @@ class SerialPort {
         success: () => void,
         error: (err: Error) => void;
     }): SerialPort {
-        let sp = SerialPort.openSerialPort(portPath, cfg, callback);
-        return new SerialPort(sp, portPath, cfg);
+        const { port, opened } = SerialPort.openSerialPort(portPath, cfg, callback);
+        return new SerialPort(port, portPath, cfg, opened);
     }
 
-    static openSerialPort(portPath: string, cfg: Configuration, callback?: {
+    private static openSerialPort(portPath: string, cfg: Configuration, callback?: {
         success: () => void,
         error: (err: Error) => void;
-    }): NativeSerialPort {
+    }) {
         let sp: NativeSerialPort;
+        let finishOpen!: (error: Error | null) => void;
+        const opened = new Promise<Error | null>(resolve => { finishOpen = resolve; });
 
         let openCallBack = (err: Error | null) => {
             log.info(`Serial port is open(${sp.isOpen}): ${portPath} ${cfg.toString()}`);
             if (sp.isOpen) {
+                finishOpen(null);
                 callback?.success();
             } else {
-                callback?.error(err || new Error('Unknown error'));
+                const error = err ?? new Error('Unknown error');
+                finishOpen(error);
+                callback?.error(error);
             }
         };
 
@@ -74,7 +79,7 @@ class SerialPort {
             stopBits: cfg.stopBits,
         }, openCallBack);
 
-        return sp;
+        return { port: sp, opened };
     }
 
     addListener(event: 'open', callback: () => void): this;
@@ -113,12 +118,34 @@ class SerialPort {
         this.serialPortInstance.write(data);
     }
 
-    close() {
-        this.serialPortInstance.close();
+    async close() {
+        await this.openResult;
+        const port = this.serialPortInstance;
+        if (port.closing) {
+            throw new Error('Serial port is still closing. Try again.');
+        }
+        if (port.isOpen) {
+            await new Promise<void>((resolve, reject) => {
+                port.close(error => error ? reject(error) : resolve());
+            });
+        }
     }
 
-    async reopen(): Promise<Error | null> {
-        return new Promise<Error | null>((resolve) => {
+    waitForOpen(): Promise<Error | null> {
+        return this.openResult;
+    }
+
+    reopen(): Promise<Error | null> {
+        if (this.serialPortInstance.closing) {
+            return Promise.resolve(new Error('Serial port is still closing. Try again.'));
+        }
+        if (this.isOpen) {
+            return Promise.resolve(null);
+        }
+        if (this.isOpening) {
+            return this.openResult;
+        }
+        this.openResult = new Promise<Error | null>((resolve) => {
             this.serialPortInstance.open((err) => {
                 if (err) {
                     log.error(`Failed to reopen serial port ${this.serialPortInstance.path}:`, err);
@@ -128,6 +155,7 @@ class SerialPort {
                 resolve(err);
             });
         });
+        return this.openResult;
     }
 
     update(cfg: Configuration): boolean {
@@ -148,8 +176,9 @@ class SerialPort {
         log.info(`Serial port configuration changed, need to reopen the serial port`);
 
         this.serialPortInstance.close();
-        let sp = SerialPort.openSerialPort(this.portPath, cfg);
-        this.serialPortInstance = sp;
+        const { port, opened } = SerialPort.openSerialPort(this.portPath, cfg);
+        this.serialPortInstance = port;
+        this.openResult = opened;
         this.init();
         this.cfg = cfg;
         return true;

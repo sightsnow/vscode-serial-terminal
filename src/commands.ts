@@ -6,32 +6,33 @@ import { log } from './logger';
 import { logSettingId, scriptSettingId, serialPortSettingId, setting } from './context/setting';
 import { SerialTerminal, serialTerminalManager } from './terminal/serialTerminal';
 import * as picker from './view/picker';
+import { showAgentPrompt } from './agentPrompt';
 
 function registerCommands(context: vscode.ExtensionContext) {
     /* eslint-disable @typescript-eslint/naming-convention */
     const commands: { [key: string]: (...args: any[]) => any; } =
     {
-        "serialTerminal.terminal.startSaveLog": startSaveLog,
-        "serialTerminal.terminal.stopSaveLog": stopSaveLog,
+        "serialTerminalShare.agentPrompt": showAgentPrompt,
+        "serialTerminalShare.terminal.startSaveLog": startSaveLog,
+        "serialTerminalShare.terminal.stopSaveLog": stopSaveLog,
+        "serialTerminalShare.terminal.clear": () => vscode.commands.executeCommand("workbench.action.terminal.clear"),
 
-        "serialTerminal.terminal.clear": () => vscode.commands.executeCommand("workbench.action.terminal.clear"),
+        "serialTerminalShare.setting.SerialPort": () => vscode.commands.executeCommand("workbench.action.openSettings", serialPortSettingId),
+        "serialTerminalShare.setting.Log": () => vscode.commands.executeCommand("workbench.action.openSettings", logSettingId),
+        "serialTerminalShare.setting.Notebook": () => vscode.commands.executeCommand("workbench.action.openSettings", scriptSettingId),
 
-        "serialTerminal.setting.SerialPort": () => vscode.commands.executeCommand("workbench.action.openSettings", serialPortSettingId),
-        "serialTerminal.setting.Log": () => vscode.commands.executeCommand("workbench.action.openSettings", logSettingId),
-        "serialTerminal.setting.Notebook": () => vscode.commands.executeCommand("workbench.action.openSettings", scriptSettingId),
+        "serialTerminalShare.treeItem.openOnEditor": openTreeItemResource,
+        "serialTerminalShare.treeItem.revealInExplorer": revealInExplorer,
+        "serialTerminalShare.treeItem.deleteResource": deleteResource,
 
-        "serialTerminal.treeItem.openOnEditor": openTreeItemResource,
-        "serialTerminal.treeItem.revealInExplorer": revealInExplorer,
-        "serialTerminal.treeItem.deleteResource": deleteResource,
+        "serialTerminalShare.serialView.open": openSerialTerminal,
+        "serialTerminalShare.serialView.refresh": updateSerialPortProvider,
 
-        "serialTerminal.serialView.open": openSerialTerminal,
-        "serialTerminal.serialView.refresh": updateSerialPortProvider,
+        "serialTerminalShare.logView.openOnEditor": openLogOnEditor,
+        "serialTerminalShare.logView.revealLogs": async () => await vscode.commands.executeCommand("revealFileInOS", setting.logSaveFolder),
 
-        "serialTerminal.logView.openOnEditor": openLogOnEditor,
-        "serialTerminal.logView.revealLogs": async () => await vscode.commands.executeCommand("revealFileInOS", setting.logSaveFolder),
-
-        "serialTerminal.scriptView.newNotebook": createScriptNotebook,
-        "serialTerminal.scriptView.revealNotebooks": async () => await vscode.commands.executeCommand("revealFileInOS", setting.noteBookFolder),
+        "serialTerminalShare.scriptView.newNotebook": createScriptNotebook,
+        "serialTerminalShare.scriptView.revealNotebooks": async () => await vscode.commands.executeCommand("revealFileInOS", setting.noteBookFolder),
     };
     /* eslint-enable @typescript-eslint/naming-convention */
 

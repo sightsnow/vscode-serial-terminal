@@ -21,6 +21,29 @@
 2. 选择串口与参数（如波特率）后连接设备。
 3. 在终端中收发数据，按需开启日志记录。
 
+## 从开发机访问串口
+
+在 Windows 安装 Serial Terminal Share 后，通过 VS Code Remote SSH 打开开发机。扩展会安装或更新远端组件。每个窗口使用独立的 `/tmp/serialterminal-share/<uid>-<随机值>/serial.sock`。新开的开发机集成终端通过 `SERIAL_TERMINAL_SHARE_SOCKET` 获取当前窗口的套接字路径。
+
+用 `GET /` 查看窗口的 `workspaceFolders`、接口和示例。环境变量缺失时，从同一 UID 的 socket 中按工作区路径匹配窗口。如果有多个窗口匹配，先确认目标再发串口输入。
+
+在命令面板运行 `Serial Terminal Share: AI Usage Prompt`，可以显示并复制入口提示，也可以创建或追加到工作区的 `AGENTS.md`。
+
+```bash
+curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" http://localhost/
+curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" http://localhost/ports
+curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" -X POST 'http://localhost/open?port=COM4&config=115200n81'
+curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" 'http://localhost/buffer?tail=40&limit=4096'
+curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" -H 'Content-Type: text/plain' \
+  --data-binary 'uname -a' 'http://localhost/run?timeout=5&limit=2048'
+```
+
+- `GET /ports` 列出 Windows 检测到的串口和打开状态。`POST /open` 在后台打开串口，保留当前编辑器的焦点。需要查看时可从串口侧栏打开对应终端。Windows 只检测到一个串口时可省略 `port`。新建终端默认使用 115200 8N1，已有终端沿用当前配置。
+- `POST /close?port=COM4` 关闭由接口打开的终端，等 Windows 释放端口后返回 `204`。手动打开的终端由 VS Code 关闭。只打开一个串口时，读写和关闭请求可以省略 `port`。
+- `GET /buffer` 返回串口原始字节。用 `tail` 取末尾行，用 `limit` 限制字节数。把响应头 `X-Serial-Cursor` 的值传给 `after` 可续读。续读时可用 `limit` 分页，`X-Serial-More: 1` 表示还有数据。 `X-Serial-Missed-Bytes` 表示被环形缓冲区覆盖的未读字节数。串口重开后先获取新游标。
+- `POST /run` 接收 UTF-8 单行命令，通过设备上已登录的 POSIX shell 执行。响应包含状态、退出码、文本输出和省略的字节数。默认等待 10 秒并返回最多 4096 字节的输出。超时后，设备上的命令可能继续运行。
+- `POST /input?enter=1` 发送 `application/octet-stream` 类型的原始输入，并追加回车。适用于 U-Boot、登录提示和交互菜单。 `GET /stream` 持续返回串口输出。
+
 ---
 
 ## 🎬 功能演示

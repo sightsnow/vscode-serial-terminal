@@ -7,7 +7,7 @@ class SerialPortCfg implements Configuration {
     dataBits: 5 | 6 | 7 | 8;
     stopBits: 1 | 1.5 | 2;
 
-    static reg = /^(\d+)(?:(n|e|o)([5678])?(1|1.5|2)?)?$/;
+    static reg = /^(\d+)(?:(n|e|o)([5678])?(1|1\.5|2)?)?$/;
 
     constructor(baudrate: number, parity: 'none' | 'even' | 'odd', dataBits: 5 | 6 | 7 | 8, stopBits: 1 | 1.5 | 2) {
         this.baudrate = baudrate;

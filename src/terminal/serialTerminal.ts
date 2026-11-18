@@ -1,37 +1,55 @@
-import { EventEmitter, l10n, Uri, Terminal as VsTerminal } from "vscode";
+import { EventEmitter, l10n, Uri, Terminal as VsTerminal, window } from "vscode";
 import * as fs from 'fs';
 import { Configuration, SerialPort } from "../serial/serialPort";
+import { SerialPortCfg } from "../serial/serialConfiguration";
 import { Terminal } from "./terminal";
 import * as colors from 'colors';
 import { setting } from "../context/setting";
 import { log } from "../logger";
 import * as utils from "../utils";
 import * as context from "../context/context";
+import { serialShare, SharedSerialPort } from "./serialShare";
 
 class SerialTerminal {
     private serialport: SerialPort;
     private terminal: Terminal;
     private isPty: boolean;
+    private readonly share: SharedSerialPort;
+    private closed = false;
+    private closing?: Promise<void>;
     private onClose: () => void = () => { };
 
     private constructor(portPath: string, serialport: SerialPort, terminal: Terminal, isPty: boolean) {
         this.isPty = isPty;
+        this.share = new SharedSerialPort(data => {
+            if (this.closed || this.closing || !serialport.isOpen) {
+                return false;
+            }
+            terminal.write(`\r\n[remote] ${JSON.stringify(data.toString()).replace(/[\x7f-\x9f]/g, char => `\\x${char.charCodeAt(0).toString(16)}`)}\r\n`);
+            serialport.write(data);
+            return true;
+        });
 
         let cfg = serialport.config;
 
         serialport.addListener('open', () => {
+            this.share.reset();
+            if (!this.closed) {
+                serialShare.register(portPath, this.share);
+            }
             terminal.write(SerialTerminal.connectedFormat(portPath, cfg));
         });
         serialport.addListener('data', (data) => {
             terminal.write(SerialTerminal.terminalFormat(data.toString()));
+            this.share.append(data);
         });
         serialport.addListener('close', () => {
+            serialShare.unregister(portPath, this.share);
             terminal.write(SerialTerminal.disconnectedFormat(portPath, cfg));
         });
 
         terminal.addListener('close', () => {
-            serialport.close();
-            this.onClose();
+            void this.closeSerial().catch(error => log.error('Failed to close serial port', error));
         });
         terminal.addListener('input', (data) => {
             serialport.write(data);
@@ -39,6 +57,9 @@ class SerialTerminal {
 
         this.serialport = serialport;
         this.terminal = terminal;
+        if (serialport.isOpen) {
+            serialShare.register(portPath, this.share);
+        }
     }
 
     // TODO: 可以考虑作为常量放在外面
@@ -63,14 +84,19 @@ class SerialTerminal {
         lastTimeStamp: bigint,
     } | undefined;
 
-    static new(portPath: string, cfg: Configuration, isPty: boolean = false): Promise<SerialTerminal> {
-        return new Promise<SerialTerminal>(async (resolve, reject) => {
-            let terminal = new Terminal(this.terminalName(portPath, cfg), isPty);
+    static async new(portPath: string, cfg: Configuration, isPty: boolean = false): Promise<SerialTerminal> {
+        const terminal = new Terminal(this.terminalName(portPath, cfg), isPty);
+        let closed = false;
+        terminal.addListener('close', () => { closed = true; });
 
-            // 延时
-            await new Promise(resolve => setTimeout(resolve, 200));
+        // Allow the VS Code terminal to initialize before the device starts sending output.
+        await new Promise(resolve => setTimeout(resolve, 200));
+        if (closed) {
+            throw new Error('The terminal closed before the port could open.');
+        }
 
-            let serialport = await SerialPort.open(portPath, cfg, {
+        try {
+            const serialport = SerialPort.open(portPath, cfg, {
                 success: () => { },
                 error: (err) => {
                     console.error(`Failed to open serial port ${portPath}:`, err);
@@ -78,8 +104,11 @@ class SerialTerminal {
                 }
             });
 
-            resolve(new SerialTerminal(portPath, serialport, terminal, isPty));
-        });
+            return new SerialTerminal(portPath, serialport, terminal, isPty);
+        } catch (error) {
+            terminal.close();
+            throw error;
+        }
     }
 
     private logCallback: (data: Buffer) => void = () => { };
@@ -153,7 +182,7 @@ class SerialTerminal {
     }
 
     private async checkAndReopen() {
-        if (!this.serialport.isOpen && !this.serialport.isOpening) {
+        if (!this.closed && !this.closing && !this.serialport.isOpen && !this.serialport.isOpening) {
             const err = await this.serialport.reopen();
             if (err) {
                 log.error(`Failed to reopen serial port ${this.serialport.name}`);
@@ -164,6 +193,9 @@ class SerialTerminal {
 
     async updateSerial(cfg?: Configuration) {
         log.info(`Updating serial port ${this.serialport.name} config with ${cfg ? cfg.toString() : 'current config'}`);
+        if (this.closed || this.closing) {
+            throw new Error('The serial terminal is closing.');
+        }
         this.checkAndReopen();
 
         if (cfg && this.serialport.update(cfg)) {
@@ -182,9 +214,36 @@ class SerialTerminal {
         }
     }
 
+    async ensureSharedOpen(reopen: boolean) {
+        if (this.closed || this.closing) {
+            throw new Error('The serial terminal is closing.');
+        }
+        const error = await (reopen ? this.serialport.reopen() : this.serialport.waitForOpen());
+        if (error) {
+            throw error;
+        }
+        if (this.closed || this.closing || !this.serialport.isOpen) {
+            throw new Error('The serial port closed while opening.');
+        }
+    }
+
     close() {
-        this.serialport.close();
-        this.terminal.close();
+        return this.closeSerial(true);
+    }
+
+    private closeSerial(closeTerminal = false): Promise<void> {
+        if (this.closed) {
+            return Promise.resolve();
+        }
+        this.closing ??= this.serialport.close().then(() => {
+            this.closed = true;
+            serialShare.unregister(this.portName(), this.share);
+            this.onClose();
+            if (closeTerminal) {
+                this.terminal.close();
+            }
+        }).finally(() => { this.closing = undefined; });
+        return this.closing;
     }
 
     getTerminalOptions() {
@@ -209,6 +268,8 @@ class SerialTerminal {
 
 class SerialTerminalManager {
     private terminals: Map<string, SerialTerminal> = new Map();
+    private readonly creating = new Map<string, Promise<SerialTerminal>>();
+    private readonly openedRemotely = new WeakSet<SerialTerminal>();
 
     async getOrCreateSerialPortTerminal(portPath: string, cfg: Configuration, isPty: boolean = false): Promise<SerialTerminal> {
         let exist = this.terminals.get(portPath);
@@ -219,14 +280,59 @@ class SerialTerminalManager {
             await exist.show();
             return exist;
         }
-        var serialTerminal = await SerialTerminal.new(portPath, cfg, isPty);
-        serialTerminal.setOnCloseCallback(() => {
-            log.info(`Serial terminal for port ${portPath} closed, removing from manager`);
-            this.terminals.delete(portPath);
-        });
+        return this.createTerminal(portPath, cfg, isPty);
+    }
 
-        this.terminals.set(portPath, serialTerminal);
-        return serialTerminal;
+    private createTerminal(portPath: string, cfg: Configuration, isPty = false, remote = false) {
+        const pending = this.creating.get(portPath);
+        if (pending) {
+            return pending;
+        }
+        const creation = SerialTerminal.new(portPath, cfg, isPty).then(terminal => {
+            if (remote) {
+                this.openedRemotely.add(terminal);
+            }
+            terminal.setOnCloseCallback(() => {
+                log.info(`Serial terminal for port ${portPath} closed, removing from manager`);
+                this.terminals.delete(portPath);
+            });
+            this.terminals.set(portPath, terminal);
+            context.updateSerialTerminalContext(window.activeTerminal);
+            return terminal;
+        }).finally(() => this.creating.delete(portPath));
+        this.creating.set(portPath, creation);
+        return creation;
+    }
+
+    async openSharedPort(portPath: string, cfg?: Configuration) {
+        const existing = this.terminals.get(portPath);
+        const pending = this.creating.get(portPath);
+        const terminal = existing ?? await (pending ?? this.createTerminal(
+            portPath, cfg ?? new SerialPortCfg(115200, 'none', 8, 1), false, true
+        ));
+        if (cfg && !cfg.equal(terminal.serialConfig())) {
+            throw new Error(`The existing terminal uses ${terminal.serialConfig()}. Close it before changing its configuration.`);
+        }
+        try {
+            await terminal.ensureSharedOpen(!!existing);
+            return terminal.serialConfig();
+        } catch (error) {
+            if (!existing && !pending) {
+                await terminal.close();
+            }
+            throw error;
+        }
+    }
+
+    async closeSharedPort(portPath: string) {
+        const terminal = this.terminals.get(portPath) ?? await this.creating.get(portPath);
+        if (!terminal) {
+            return;
+        }
+        if (!this.openedRemotely.has(terminal)) {
+            throw new Error('Close this manually opened serial terminal in VS Code.');
+        }
+        await terminal.close();
     }
 
     getSerialPortTerminal(portPath: string): SerialTerminal | undefined {
@@ -234,8 +340,12 @@ class SerialTerminalManager {
     }
 
     getSerialPortTerminalByTerminal(terminal: VsTerminal): SerialTerminal | undefined {
+        const options = terminal.creationOptions;
+        if (!('pty' in options)) {
+            return undefined;
+        }
         for (let serialTerminal of this.terminals.values()) {
-            if (serialTerminal.getTerminalOptions().name === terminal.name) {
+            if (serialTerminal.getTerminalOptions().pty === options.pty) {
                 return serialTerminal;
             }
         }

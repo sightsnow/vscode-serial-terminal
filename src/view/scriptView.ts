@@ -5,12 +5,12 @@ import { setting } from '../context/setting';
 function registerScriptView(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider(
-            "serialport.scriptsNotebooks",
+            "serialTerminalShare.scriptsNotebooks",
             new FileTreeDataProvider(
                 ['.scrnb', '.mdnb', '.md'],
                 () => setting.noteBookFolder,
                 {
-                    command: "serialTerminal.treeItem.openOnEditor",
+                    command: "serialTerminalShare.treeItem.openOnEditor",
                     readdirErrorMessagePrefix: vscode.l10n.t("Script path error: "),
                     icon: new vscode.ThemeIcon("notebook"),
                 }

@@ -3,9 +3,9 @@ import { homedir } from 'os';
 import { log } from "../logger";
 import * as fs from 'fs';
 
-const serialPortSettingId = 'SerialTerminal.serialPort';
-const logSettingId = 'SerialTerminal.log';
-const scriptSettingId = 'SerialTerminal.notebook';
+const serialPortSettingId = 'SerialTerminalShare.serialPort';
+const logSettingId = 'SerialTerminalShare.log';
+const scriptSettingId = 'SerialTerminalShare.notebook';
 
 const portConfigurationsKey = `${serialPortSettingId}.configurations`;
 const logSaveFolderKey = `${logSettingId}.savePath`;

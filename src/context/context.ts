@@ -1,29 +1,21 @@
 import * as vscode from 'vscode';
-import { log } from '../logger';
 import { serialTerminalManager } from '../terminal/serialTerminal';
 
 enum ContextKey {
-    rcordingLog = "serialTerminal.terminal.recordingLog",
-    terminalFocus = "serialTerminal.terminal.focus"
+    rcordingLog = "serialTerminalShare.terminal.recordingLog",
+    terminalFocus = "serialTerminalShare.terminal.focus"
 }
 
 function registerContextCallback(context: vscode.ExtensionContext) {
     context.subscriptions.push(
-        vscode.window.onDidChangeActiveTerminal((terminal) => {
-            if (!terminal) {
-                log.error("No active terminal");
-                return;
-            }
+        vscode.window.onDidChangeActiveTerminal(updateSerialTerminalContext));
+    updateSerialTerminalContext(vscode.window.activeTerminal);
+}
 
-            let exist = serialTerminalManager.getSerialPortTerminalByTerminal(terminal);
-            if (!exist) {
-                setSerialTerminalFocus(false);
-                setSerialTerminalRecordingLog(false);
-            } else {
-                setSerialTerminalFocus(true);
-                setSerialTerminalRecordingLog(exist.isRecordingLog());
-            }
-        }));
+function updateSerialTerminalContext(terminal: vscode.Terminal | undefined) {
+    const serial = terminal && serialTerminalManager.getSerialPortTerminalByTerminal(terminal);
+    setSerialTerminalFocus(!!serial);
+    setSerialTerminalRecordingLog(serial?.isRecordingLog() ?? false);
 }
 
 function setSerialTerminalRecordingLog(value: boolean) {
@@ -44,6 +36,6 @@ function setSerialTerminalFocus(value: boolean) {
 
 export {
     registerContextCallback,
-    setSerialTerminalFocus,
+    updateSerialTerminalContext,
     setSerialTerminalRecordingLog
 };

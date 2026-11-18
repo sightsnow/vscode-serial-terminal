@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { EventEmitter, ExtensionTerminalOptions, Terminal as VsTerminal, TerminalDimensions, window } from "vscode";
 import { log } from '../logger';
-import * as context from '../context/context';
 
 class Terminal {
     private writeEmitter = new EventEmitter<string>;
@@ -14,7 +13,8 @@ class Terminal {
     private opts: ExtensionTerminalOptions;
     private isPty: boolean;
     private terminalInstance: () => VsTerminal | undefined = () =>
-        vscode.window.terminals.find((terminal) => terminal.name === this.opts.name);
+        vscode.window.terminals.find((terminal) =>
+            'pty' in terminal.creationOptions && terminal.creationOptions.pty === this.opts.pty);
 
     constructor(name: string, isPty: boolean = false) {
         this.opts = {
@@ -74,7 +74,6 @@ class Terminal {
         }
 
         await this.terminalInstance()?.show();
-        context.setSerialTerminalFocus(true);
     }
 
     close(n: number | void) {
