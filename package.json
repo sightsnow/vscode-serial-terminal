@@ -15,7 +15,7 @@
   "bugs": {
     "url": "https://github.com/sightsnow/vscode-serial-terminal/issues"
   },
-  "icon": "assets/logo.png",
+  "icon": "assets/serial-share.png",
   "l10n": "./l10n",
   "keywords": [
     "serial port",
