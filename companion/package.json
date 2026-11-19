@@ -2,7 +2,7 @@
   "name": "serialterminal-share-remote",
   "displayName": "Serial Terminal Share Remote",
   "publisher": "sightsnow",
-  "version": "0.2.0",
+  "version": "0.2.3",
   "description": "Access Windows serial terminals from a Remote SSH development host.",
   "engines": {
     "vscode": "^1.76.0"

@@ -6,13 +6,15 @@ import { log } from './logger';
 import { logSettingId, scriptSettingId, serialPortSettingId, setting } from './context/setting';
 import { SerialTerminal, serialTerminalManager } from './terminal/serialTerminal';
 import * as picker from './view/picker';
-import { showAgentPrompt } from './agentPrompt';
+import { serialctlPrompt, showAgentPrompt, socketPrompt } from './agentPrompt';
 
 function registerCommands(context: vscode.ExtensionContext) {
     /* eslint-disable @typescript-eslint/naming-convention */
     const commands: { [key: string]: (...args: any[]) => any; } =
     {
-        "serialTerminalShare.agentPrompt": showAgentPrompt,
+        "serialTerminalShare.agentPrompt": () => showAgentPrompt(socketPrompt),
+        "serialTerminalShare.installSerialctl": installSerialctl,
+        "serialTerminalShare.serialctlHelp": () => showAgentPrompt(serialctlPrompt),
         "serialTerminalShare.terminal.startSaveLog": startSaveLog,
         "serialTerminalShare.terminal.stopSaveLog": stopSaveLog,
         "serialTerminalShare.terminal.clear": () => vscode.commands.executeCommand("workbench.action.terminal.clear"),
@@ -40,6 +42,19 @@ function registerCommands(context: vscode.ExtensionContext) {
         context.subscriptions.push(
             vscode.commands.registerCommand(id, handler)
         );
+    }
+}
+
+async function installSerialctl() {
+    if (vscode.env.remoteName !== 'ssh-remote') {
+        void vscode.window.showInformationMessage('Connect to the development host with Remote SSH first.');
+        return;
+    }
+    try {
+        const path = await vscode.commands.executeCommand<string>('serialTerminalShare.remote.installSerialctl');
+        void vscode.window.showInformationMessage(`Installed serial-sharectl at ${path}. Open a new integrated terminal to use it.`);
+    } catch (error) {
+        void vscode.window.showErrorMessage(`Could not install serial-sharectl: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 

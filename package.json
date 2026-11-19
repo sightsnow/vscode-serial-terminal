@@ -2,7 +2,7 @@
   "name": "serialterminal-share",
   "displayName": "Serial Terminal Share",
   "publisher": "sightsnow",
-  "version": "0.2.0",
+  "version": "0.2.3",
   "description": "An interactive serial terminal tool",
   "extensionKind": [
     "ui"
@@ -151,6 +151,16 @@
       ]
     },
     "commands": [
+      {
+        "command": "serialTerminalShare.installSerialctl",
+        "title": "Install serial-sharectl",
+        "category": "Serial Terminal Share"
+      },
+      {
+        "command": "serialTerminalShare.serialctlHelp",
+        "title": "AI Usage Serialctl Prompt",
+        "category": "Serial Terminal Share"
+      },
       {
         "command": "serialTerminalShare.agentPrompt",
         "title": "AI Usage Prompt",

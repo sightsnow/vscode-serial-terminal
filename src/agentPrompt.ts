@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 
-const prompt = 'VS Code 串口共享支持发现、打开、读写和关闭串口。通过 `SERIAL_TERMINAL_SHARE_SOCKET` 连接，`GET /ports` 查看串口及打开状态，`GET /` 查看其他接口。变量缺失或连接失败时，查询 `/tmp/serialterminal-share/<uid>-*/serial.sock` 的 `GET /`，仅按 `workspaceFolders` 选取唯一匹配当前项目的窗口。读取日志时限量或续读。';
+export const socketPrompt = 'VS Code 串口共享支持发现、打开、读写和关闭串口。通过 `SERIAL_TERMINAL_SHARE_SOCKET` 连接，`GET /ports` 查看串口及打开状态，`GET /` 查看其他接口。变量缺失或连接失败时，查询 `/tmp/serialterminal-share/<uid>-*/serial.sock` 的 `GET /`，仅按 `workspaceFolders` 选取唯一匹配当前项目的窗口。读取日志时限量或续读。';
+export const serialctlPrompt = 'VS Code 串口共享支持发现、打开、读写和关闭串口。优先用 `serial-sharectl`，找不到命令时用 `~/.local/bin/serial-sharectl`。用 `ports` 查看串口及打开状态，其他操作见 `--help`。读取日志时限量或续读。';
 
-async function updateAgentsFile() {
+async function updateAgentsFile(prompt: string) {
     const folders = vscode.workspace.workspaceFolders ?? [];
     if (folders.length === 0) {
         void vscode.window.showInformationMessage('Open a workspace folder to write AGENTS.md.');
@@ -38,7 +39,9 @@ async function updateAgentsFile() {
     const eol = document.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
     const separator = !text || text.endsWith(eol + eol) ? '' : text.endsWith(eol) ? eol : eol + eol;
     const edit = new vscode.WorkspaceEdit();
-    const legacy = /^(?:[^\S\r\n]*)调试串口时，优先使用 `?SERIAL_TERMINAL_SHARE_SOCKET`?，请求 `?GET \/`? 查看接口。[^\S\r\n]*$/m.exec(text) ?? /^串口优先用 .*读取缓冲区用 `tail`、`limit` 或 `after`。$/m.exec(text) ?? /^通过 VS Code 共享的串口可发现、打开、读写和关闭。.*日志限量或续读。$/m.exec(text);
+    const legacy = prompt === socketPrompt
+        ? /^(?:[^\S\r\n]*)调试串口时，优先使用 `?SERIAL_TERMINAL_SHARE_SOCKET`?，请求 `?GET \/`? 查看接口。[^\S\r\n]*$/m.exec(text) ?? /^串口优先用 .*读取缓冲区用 `tail`、`limit` 或 `after`。$/m.exec(text) ?? /^通过 VS Code 共享的串口可发现、打开、读写和关闭。.*日志限量或续读。$/m.exec(text)
+        : /^用 `~\/\.local\/bin\/serialctl ports` 查看 VS Code 共享的串口及打开状态，用 `~\/\.local\/bin\/serialctl buffer --tail 40` 限量读取日志，其他操作见 `~\/\.local\/bin\/serialctl --help`。命令缺失时，在 Remote SSH 窗口运行「Serial Terminal Share: Install serialctl」。$/m.exec(text);
     if (legacy) {
         edit.replace(uri, new vscode.Range(document.positionAt(legacy.index),
             document.positionAt(legacy.index + legacy[0].length)), prompt);
@@ -56,7 +59,7 @@ async function updateAgentsFile() {
     void vscode.window.showInformationMessage('Serial prompt saved to AGENTS.md.');
 }
 
-export async function showAgentPrompt() {
+export async function showAgentPrompt(prompt: string) {
     try {
         const choice = await vscode.window.showQuickPick(['Show prompt', 'Write to AGENTS.md']);
         if (choice === 'Show prompt') {
@@ -64,7 +67,7 @@ export async function showAgentPrompt() {
                 await vscode.env.clipboard.writeText(prompt);
             }
         } else if (choice === 'Write to AGENTS.md') {
-            await updateAgentsFile();
+            await updateAgentsFile(prompt);
         }
     } catch (error) {
         void vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));

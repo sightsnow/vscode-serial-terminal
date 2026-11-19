@@ -4,24 +4,39 @@ const { lstatSync, mkdirSync, mkdtempSync, rmdirSync } = require('node:fs');
 const { join } = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 const { runCommand } = require('./run');
+const { installSerialctl, isManagedSerialctl, configureSerialctlPath } = require('./installSerialctl');
 
 const requestSerial = (...args) => vscode.commands.executeCommand('serialTerminalShare.request', ...args);
 const running = new Set();
 
 const api = {
+    quickStart: [
+        'GET /ports',
+        'POST /open?port=PORT (if needed; use a port from /ports)',
+        'GET /buffer?port=PORT&tail=40&limit=4096',
+    ],
     endpoints: {
-        'GET /ports': 'List Windows serial devices and their open status.',
-        'POST /open': 'Open in the background. Optional port and config (default 115200n81).',
-        'POST /close': 'Close a terminal opened by /open and release the port.',
-        'GET /buffer': 'Read raw bytes. Use tail (lines) and limit (bytes), or pass X-Serial-Cursor as after with an optional limit. Check X-Serial-More and X-Serial-Missed-Bytes.',
-        'GET /stream': 'Follow raw serial output.',
-        'POST /input': 'Send application/octet-stream. Set enter=1 to append CR.',
-        'POST /run': 'Send one text/plain line to an active POSIX shell. timeout is in seconds, limit in bytes. Returns status, output and exitCode.',
+        'GET /': 'Show this window’s workspaceFolders, endpoints, and examples. Connect over the Unix socket with Host: localhost and omit the Origin header.',
+        'GET /ports': 'List Windows serial devices as a JSON array. Each entry has a port name and an open boolean, plus manufacturer when available.',
+        'POST /open': 'Open in the background. Set the optional config query parameter as a serial preset such as 115200n81, the default for new terminals. Existing terminals retain their configuration. A conflicting preset returns HTTP 409.',
+        'POST /close': 'Close a terminal opened by /open and release the port. Close manually opened terminals in VS Code.',
+        'GET /buffer': 'Read raw bytes. tail selects lines within limit bytes, so the first line may be partial. To resume, pass the latest X-Serial-Cursor as after and omit tail. Repeat while X-Serial-More is 1. X-Serial-Missed-Bytes counts overwritten unread bytes. For an expired cursor, omit after.',
+        'GET /stream': 'Stream buffered output first, then new bytes until disconnected or interrupted. Use /buffer for a bounded read. With curl, use --no-buffer for live display.',
+        'POST /input': 'Send application/octet-stream. Set enter=1 to append a carriage return. To send only a carriage return, use enter=1 and an empty body. The maximum is 4096 bytes including the appended carriage return.',
+        'POST /run': 'Send one UTF-8 text/plain command without control characters to the device’s active POSIX shell. Check JSON for status=completed and exitCode=0 even if HTTP succeeds. timeout is 1–120 seconds (default 10), limit is 1–262144 bytes (default 4096). A timed-out command may keep running.',
     },
-    port: 'Use port=COM4 when needed. Omit it when there is only one candidate.',
+    port: 'In the examples, replace PORT with a port name returned by GET /ports. Without port, /open requires one detected device and read/write/close require one open port.',
+    requestBody: 'POST /input and POST /run require Content-Length in bytes. The curl --data-binary examples set it automatically.',
+    socket: 'The curl examples use SERIAL_TERMINAL_SHARE_SOCKET. If you discovered the socket by workspace, set this variable to the selected socket path before running them.',
     examples: [
-        'curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" "http://localhost/buffer?tail=40&limit=4096"',
-        'curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" -H "Content-Type: text/plain" --data-binary "uname -a" "http://localhost/run?timeout=5&limit=2048"',
+        'curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" http://localhost/',
+        'curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" http://localhost/ports',
+        'curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" -X POST "http://localhost/open?port=PORT"',
+        'curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" -D serial-headers.txt "http://localhost/buffer?port=PORT&tail=40&limit=4096"',
+        'curl -fsS --no-buffer --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" "http://localhost/stream?port=PORT"',
+        'curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" -H "Content-Type: application/octet-stream" --data-binary "" "http://localhost/input?port=PORT&enter=1"',
+        'curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" -H "Content-Type: text/plain" --data-binary "uname -a" "http://localhost/run?port=PORT&timeout=5&limit=2048"',
+        'curl -fsS --unix-socket "$SERIAL_TERMINAL_SHARE_SOCKET" -X POST "http://localhost/close?port=PORT"',
     ],
 };
 
@@ -245,6 +260,14 @@ function activate(context) {
     if (vscode.env.remoteName !== 'ssh-remote' || process.platform === 'win32') {
         return;
     }
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'serialTerminalShare.remote.installSerialctl', () => installSerialctl(context)
+    ));
+    isManagedSerialctl().then(installed => {
+        if (installed) {
+            configureSerialctlPath(context);
+        }
+    }).catch(error => console.error('Serial Terminal Share Remote:', error));
     const directory = createSocketDirectory();
     const socketPath = join(directory, 'serial.sock');
     const sockets = new Set();

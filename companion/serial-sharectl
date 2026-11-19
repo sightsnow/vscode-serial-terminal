@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+# Managed by Serial Terminal Share.
+"""Call Serial Terminal Share over its local Unix socket."""
+import argparse
+import glob
+import http.client
+import json
+import os
+from pathlib import Path
+import socket
+import sys
+from contextlib import closing, contextmanager
+from urllib.parse import urlencode
+
+
+class SerialConnection(http.client.HTTPConnection):
+    def __init__(self, path, timeout):
+        super().__init__("localhost", timeout=timeout)
+        self.path = path
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.path)
+
+
+@contextmanager
+def request(path, method, route, body=None, content_type=None, timeout=3):
+    connection = SerialConnection(path, timeout)
+    try:
+        headers = {"Content-Type": content_type} if content_type else {}
+        connection.request(method, route, body, headers)
+        response = connection.getresponse()
+        if response.status >= 400:
+            detail = response.read(2048).decode("utf-8", "replace").strip()
+            raise ValueError(f"HTTP {response.status}: {detail}")
+        yield response
+    finally:
+        connection.close()
+
+
+def discover(explicit):
+    if explicit:
+        return explicit
+    configured = os.environ.get("SERIAL_TERMINAL_SHARE_SOCKET")
+    if configured:
+        with closing(SerialConnection(configured, 3)) as connection:
+            try:
+                connection.connect()
+            except PermissionError:
+                raise
+            except OSError:
+                pass
+            else:
+                return configured
+    cwd = Path.cwd().resolve()
+    matches = []
+    for path in glob.glob(f"/tmp/serialterminal-share/{os.getuid()}-*/serial.sock"):
+        try:
+            with request(path, "GET", "/") as response:
+                folders = json.load(response).get("workspaceFolders", [])
+        except PermissionError:
+            raise
+        except (OSError, ValueError, http.client.HTTPException):
+            continue
+        if any(Path(folder).resolve() in (cwd, *cwd.parents) for folder in folders):
+            matches.append(path)
+    if len(matches) != 1:
+        raise ValueError(f"{len(matches)} matching VS Code windows. Set SERIAL_TERMINAL_SHARE_SOCKET or pass --socket.")
+    return matches[0]
+
+
+def positive(value):
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("expected a positive integer")
+    return number
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Quick start (replace PORT with a name from ports):\n"
+            "  serial-sharectl ports\n"
+            "  serial-sharectl open --port PORT  # if closed\n"
+            "  serial-sharectl buffer --port PORT --tail 40\n"
+            "  serial-sharectl run --port PORT --timeout 5 'uname -a'  # active POSIX shell only\n"
+            "See COMMAND --help. Omit --port only with one detected device for open,\n"
+            "or one open port for reads, writes, and close.\n"
+            "Socket override: serial-sharectl --socket PATH ports\n"
+            "Discovery tries SERIAL_TERMINAL_SHARE_SOCKET, then a unique workspace\n"
+            "containing the current directory. Permission errors stop discovery.\n"
+            "All commands, including info, need a socket."
+        ),
+    )
+    parser.add_argument("--socket", help="override socket discovery (place before the subcommand)")
+    commands = parser.add_subparsers(dest="command", required=True)
+    descriptions = {
+        "info": "show the selected window's workspace and socket API",
+        "ports": "list detected ports and open status",
+        "open": "open a detected port in the background",
+        "close": "release a port opened by this tool or the socket API",
+        "buffer": "read recent output or resume from a cursor",
+        "stream": "follow raw output until interrupted",
+        "input": "send raw bytes, optionally followed by Enter",
+        "run": "run a POSIX shell command on the device and return JSON",
+    }
+    notes = {
+        "open": (
+            "The default preset applies to new terminals. An existing terminal keeps its\n"
+            "configuration. An explicit conflicting --config returns HTTP 409."
+        ),
+        "close": "Close manually opened terminals in VS Code.",
+        "buffer": (
+            "--tail selects lines within --limit bytes, so the first line may be partial.\n"
+            "Raw bytes go to stdout. With --cursor, pass X-Serial-Cursor from stderr\n"
+            "to --after. Use the latest cursor while X-Serial-More is 1.\n"
+            "X-Serial-Missed-Bytes counts overwritten unread bytes. For an expired\n"
+            "cursor, omit --after."
+        ),
+        "stream": "Streams buffered output first, then new bytes. Press Ctrl+C to stop. Use buffer for a bounded read.",
+        "input": (
+            "With no data argument, stdin may block until EOF. Examples:\n"
+            "  serial-sharectl input --port PORT --enter ''  # carriage return only\n"
+            "  serial-sharectl input --port PORT -- '-n'    # input starts with a dash\n"
+            "Maximum payload: 4096 bytes including any appended carriage return."
+        ),
+        "run": (
+            "Pass one command line without a trailing newline or control characters.\n"
+            "--limit accepts 1–262144 bytes.\n"
+            "Check JSON status and exitCode. Success on the device requires\n"
+            "status=completed and exitCode=0. The CLI can exit 0 on a successful HTTP\n"
+            "response even when the device command fails or times out."
+        ),
+    }
+    for name, description in descriptions.items():
+        command = commands.add_parser(
+            name, help=description, description=description, epilog=notes.get(name),
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+        if name not in ("info", "ports"):
+            command.add_argument("--port", help="serial port name from ports")
+        if name == "open":
+            command.add_argument("--config", help="serial preset (default: 115200n81)")
+        if name in ("buffer", "run"):
+            command.add_argument("--limit", type=positive, default=4096, help="maximum output bytes (default: 4096)")
+        if name == "buffer":
+            selection = command.add_mutually_exclusive_group()
+            selection.add_argument("--tail", type=positive, help="return the last N lines")
+            selection.add_argument("--after", help="resume from a previously returned cursor")
+            command.add_argument("--cursor", action="store_true", help="print cursor, more-data flag, and missed byte count to stderr")
+        if name == "input":
+            command.add_argument("--enter", action="store_true", help="append carriage return")
+            command.add_argument("data", nargs="?", help="UTF-8 input; omit to read raw bytes from stdin")
+        if name == "run":
+            command.add_argument("--timeout", type=positive, default=10, help="seconds to wait (1–120, default: 10); the command may keep running")
+            command.add_argument("line", help="one command for the board's active POSIX shell")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    command = args.command
+    params = {key: value for key, value in vars(args).items()
+              if key in ("port", "config", "limit", "tail", "after", "timeout") and value is not None}
+    method = "POST" if command in ("open", "close", "input", "run") else "GET"
+    body = None
+    content_type = None
+    if command == "input":
+        body = args.data.encode() if args.data is not None else (
+            b"" if args.enter and sys.stdin.isatty() else sys.stdin.buffer.read(4097)
+        )
+        if len(body) + args.enter > 4096:
+            raise ValueError("serial input exceeds 4096 bytes")
+        if args.enter:
+            params["enter"] = 1
+        content_type = "application/octet-stream"
+    if command == "run":
+        if args.timeout > 120:
+            raise ValueError("run timeout must be at most 120 seconds")
+        body = args.line.encode()
+        content_type = "text/plain"
+    route = "/" if command == "info" else "/" + command
+    if params:
+        route += "?" + urlencode(params)
+    timeout = None if command == "stream" else args.timeout + 5 if command == "run" else 5
+    with request(discover(args.socket), method, route, body, content_type, timeout) as response:
+        if command == "buffer" and args.cursor:
+            for name in ("X-Serial-Cursor", "X-Serial-More", "X-Serial-Missed-Bytes"):
+                print(f"{name}: {response.getheader(name)}", file=sys.stderr)
+        if command == "stream":
+            while True:
+                chunk = response.read1(4096)
+                if not chunk:
+                    break
+                sys.stdout.buffer.write(chunk)
+                sys.stdout.buffer.flush()
+        else:
+            sys.stdout.buffer.write(response.read())
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        sys.exit(f"serial-sharectl: {error}")

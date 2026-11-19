@@ -23,6 +23,18 @@
 
 ## 从开发机访问串口
 
+在 Remote SSH 窗口运行 `Serial Terminal Share: Install serial-sharectl`，将随包工具安装到开发机的 `~/.local/bin/serial-sharectl`，并为新开的集成终端配置 PATH。运行 `Serial Terminal Share: AI Usage Serialctl Prompt` 显示并复制提示词，或写入工作区的 `AGENTS.md`。工具需要 Python 3，也可以从源码直接运行 `./companion/serial-sharectl`。
+
+工具优先使用当前窗口的 socket 环境变量，缺失或连接失败时按工作区查找唯一匹配的窗口。也可以用 `--socket PATH` 指定窗口。
+
+```bash
+serial-sharectl ports
+serial-sharectl buffer --tail 40
+serial-sharectl run 'uname -a'
+```
+
+用 `--help` 查看全部子命令。若要在 Codex 的工作区写入模式下保存允许规则，先把工具安装到工作区之外的可信位置，再按绝对路径和子命令分别授权，例如只放行 `/home/apple/.local/bin/serial-sharectl ports` 和 `/home/apple/.local/bin/serial-sharectl buffer`。
+
 在 Windows 安装 Serial Terminal Share 后，通过 VS Code Remote SSH 打开开发机。扩展会安装或更新远端组件。每个窗口使用独立的 `/tmp/serialterminal-share/<uid>-<随机值>/serial.sock`。新开的开发机集成终端通过 `SERIAL_TERMINAL_SHARE_SOCKET` 获取当前窗口的套接字路径。
 
 用 `GET /` 查看窗口的 `workspaceFolders`、接口和示例。环境变量缺失时，从同一 UID 的 socket 中按工作区路径匹配窗口。如果有多个窗口匹配，先确认目标再发串口输入。
